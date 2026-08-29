@@ -236,7 +236,7 @@ func nextAvailableName(name string, existing map[string]bool) string {
 	if !existing[strings.ToLower(name)] {
 		return name
 	}
-	ext := strings.TrimSuffix(name, filepath.Ext(name))
+	base := strings.TrimSuffix(name, filepath.Ext(name))
 	for i := 1; i < 10000; i++ {
 		candidate := fmt.Sprintf("%s-%d.json", base, i)
 		if !existing[strings.ToLower(candidate)] {
