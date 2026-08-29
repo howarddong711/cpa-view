@@ -201,6 +201,18 @@ func (a *pluginApp) commit(_ context.Context, req managementRequest) (management
 	if !ok {
 		return jsonResponse(http.StatusGone, map[string]any{"error": "preview_expired"})
 	}
+	// Resolve existing names first so the default behavior never overwrites a CPA auth file.
+	existingNames := map[string]bool{}
+	if raw, err := callHost(methodHostAuthList, map[string]any{}); err == nil {
+		var list authListResponse
+		if json.Unmarshal(raw, &list) == nil {
+			for _, item := range list.Files {
+				if item.Name != "" {
+					existingNames[strings.ToLower(item.Name)] = true
+				}
+			}
+		}
+	}
 	imported, skipped := 0, 0
 	for i, acc := range p.accounts {
 		raw, _ := json.Marshal(acc)
@@ -208,14 +220,30 @@ func (a *pluginApp) commit(_ context.Context, req managementRequest) (management
 		if name == "" {
 			name = fmt.Sprintf("cpa-view-%d.json", i+1)
 		}
+		name = nextAvailableName(name, existingNames)
 		_, err := callHost(methodHostAuthSave, authSaveRequest{Name: name, JSON: raw})
 		if err != nil {
 			skipped++
 			continue
 		}
+		existingNames[strings.ToLower(name)] = true
 		imported++
 	}
 	return jsonResponse(http.StatusOK, map[string]any{"imported": imported, "skipped": skipped})
+}
+
+func nextAvailableName(name string, existing map[string]bool) string {
+	if !existing[strings.ToLower(name)] {
+		return name
+	}
+	ext := strings.TrimSuffix(name, filepath.Ext(name))
+	for i := 1; i < 10000; i++ {
+		candidate := fmt.Sprintf("%s-%d.json", base, i)
+		if !existing[strings.ToLower(candidate)] {
+			return candidate
+		}
+	}
+	return fmt.Sprintf("cpa-view-%d.json", time.Now().UnixNano())
 }
 
 func (a *pluginApp) groupsResponse() (managementResponse, error) {
