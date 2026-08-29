@@ -1,0 +1,38 @@
+# CPA View
+
+CPA View is a deliberately small native CLIProxyAPI plugin for account-pool visibility, safe multi-format import, custom groups, and usage dashboards.
+
+## Current scope
+
+- Native C ABI v1 / RPC schema v4 registration.
+- Management Center resource with account pool and dashboard tabs.
+- `host.auth.list` and `host.auth.save` callbacks; the plugin never edits CPA auth files directly.
+- JSON, JSON array, NDJSON/JSONL, TXT and ZIP import parsing.
+- CPA native Codex auth and sub2api account conversion.
+- 10 MB input, 1,000 account, JSON depth 20, ZIP path and expansion limits.
+- Redacted previews with a 10 minute expiry and duplicate detection.
+- Usage callback aggregation in a plugin-owned statistics file (credentials are never persisted).
+
+## Build
+
+Go 1.24+, Node.js 20+, npm and a CGO toolchain are required by CLIProxyAPI's native plugin ABI.
+
+```bash
+make verify
+```
+
+The local environment used to scaffold this project did not have Go on PATH; CI can build all target platforms with the workflow added in a later phase.
+
+## Configuration
+
+```yaml
+plugins:
+  configs:
+    cpa-view:
+      enabled: true
+      priority: 20
+      data_dir: data/cpa-view
+```
+
+Only aggregate usage and group membership are stored under `data_dir`. Raw auth JSON and tokens are held in memory only while a preview is pending.
+
