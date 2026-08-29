@@ -4,8 +4,11 @@ CPA View is a deliberately small native CLIProxyAPI plugin for account-pool visi
 
 ## Current scope
 
-- Native C ABI v1 / RPC schema v4 registration.
+- Native C ABI v1 / RPC schema v3 registration (compatible with CPA v7.2.135).
 - Management Center resource with account pool and dashboard tabs.
+- The public resource embeds a redacted account/usage snapshot, so the page can
+  be opened without a Management Key. Management routes remain protected by
+  CPA and prompt for a key only when an operation needs fresh data or writes.
 - `host.auth.list` and `host.auth.save` callbacks; the plugin never edits CPA auth files directly.
 - JSON, JSON array, NDJSON/JSONL, TXT and ZIP import parsing.
 - CPA native Codex auth and sub2api account conversion.
@@ -35,4 +38,3 @@ plugins:
 ```
 
 Only aggregate usage and group membership are stored under `data_dir`. Raw auth JSON and tokens are held in memory only while a preview is pending.
-
