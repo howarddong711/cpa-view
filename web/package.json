@@ -1,0 +1,9 @@
+{
+  "name": "cpa-view-web",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "build": "node -e \"require('fs').mkdirSync('dist',{recursive:true}); require('fs').copyFileSync('index.html','dist/index.html')\"",
+    "test": "node -e \"require('fs').accessSync('index.html')\""
+  }
+}

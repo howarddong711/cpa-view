@@ -6,7 +6,7 @@ WEB_DIR := $(CURDIR)/web
 .PHONY: web build plugin test verify package clean
 
 web:
-	cd $(WEB_DIR) && npm install
+	cd $(WEB_DIR) && npm run build
 
 build: plugin
 
@@ -31,4 +31,3 @@ package: plugin
 
 clean:
 	rm -rf $(DIST_DIR)
-
