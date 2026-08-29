@@ -18,7 +18,9 @@ type wireError struct {
 }
 
 const (
-	schemaVersion            = 4
+	// Schema 3 is supported by CPA v7.2.135 and contains every callback used by CPA View.
+	// Newer hosts remain backward compatible with a plugin registering schema 3.
+	schemaVersion            = 3
 	methodPluginRegister     = "plugin.register"
 	methodPluginReconfigure  = "plugin.reconfigure"
 	methodManagementRegister = "management.register"
