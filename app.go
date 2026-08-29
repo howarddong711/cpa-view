@@ -123,6 +123,16 @@ func (a *pluginApp) accounts(ctx context.Context, _ managementRequest) (manageme
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	rows := make([]accountRow, 0, len(list.Files))
+	usageByAuth := map[string]usageHourly{}
+	for _, usage := range a.hourly {
+		total := usageByAuth[usage.AuthIndex]
+		total.RequestCount += usage.RequestCount
+		total.SuccessCount += usage.SuccessCount
+		total.InputTokens += usage.InputTokens
+		total.OutputTokens += usage.OutputTokens
+		total.CachedTokens += usage.CachedTokens
+		usageByAuth[usage.AuthIndex] = total
+	}
 	for _, f := range list.Files {
 		groups := []string{"全部"}
 		if strings.EqualFold(f.Type, "codex") || strings.EqualFold(f.Provider, "codex") {
@@ -133,8 +143,13 @@ func (a *pluginApp) accounts(ctx context.Context, _ managementRequest) (manageme
 				groups = append(groups, g)
 			}
 		}
-		row := accountRow{AuthIndex: f.AuthIndex, Name: redactName(f.Name, f.Email), Email: redactEmail(f.Email), Type: f.Type, Status: f.Status, Disabled: f.Disabled, RequestCount: f.Success + f.Failed, Groups: uniqueStrings(groups)}
-		if row.RequestCount > 0 {
+		u := usageByAuth[f.AuthIndex]
+		row := accountRow{AuthIndex: f.AuthIndex, Name: redactName(f.Name, f.Email), Email: redactEmail(f.Email), Type: f.Type, Status: f.Status, Disabled: f.Disabled, RequestCount: f.Success + f.Failed + u.RequestCount, TotalTokens: u.InputTokens + u.OutputTokens, InputTokens: u.InputTokens, OutputTokens: u.OutputTokens, CachedTokens: u.CachedTokens, Groups: uniqueStrings(groups)}
+		if u.RequestCount > 0 {
+			rate := float64(u.SuccessCount) / float64(u.RequestCount) * 100
+			row.SuccessRate = &rate
+		}
+		if row.SuccessRate == nil && row.RequestCount > 0 {
 			rate := float64(f.Success) / float64(row.RequestCount) * 100
 			row.SuccessRate = &rate
 		}
