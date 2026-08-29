@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -89,7 +90,7 @@ func (a *pluginApp) handleManagement(ctx context.Context, req managementRequest)
 	}
 	switch {
 	case req.Method == http.MethodGet && (path == "/" || strings.HasSuffix(path, "/app")):
-		return htmlResponse(http.StatusOK, embeddedIndex), nil
+		return a.renderIndex(ctx), nil
 	case req.Method == http.MethodGet && path == "/accounts":
 		return a.accounts(ctx, req)
 	case req.Method == http.MethodPost && path == "/imports/preview":
@@ -109,6 +110,44 @@ func (a *pluginApp) handleManagement(ctx context.Context, req managementRequest)
 	default:
 		return jsonResponse(http.StatusNotFound, map[string]any{"error": "not_found"})
 	}
+}
+
+// renderIndex serves a redacted, read-only snapshot with the public resource.
+// CPA protects management routes with its Management Key before the plugin is
+// called, so embedding this snapshot is the only safe way to make the page
+// useful without weakening CPA's global management authentication.
+func (a *pluginApp) renderIndex(ctx context.Context) managementResponse {
+	type snapshot struct {
+		Accounts  []accountRow   `json:"accounts"`
+		Groups    []string       `json:"groups"`
+		Dashboard map[string]any `json:"dashboard"`
+	}
+	out := snapshot{Accounts: []accountRow{}, Groups: []string{"全部", "Codex"}, Dashboard: map[string]any{}}
+	if resp, err := a.accounts(ctx, managementRequest{}); err == nil {
+		var v struct {
+			Accounts []accountRow `json:"accounts"`
+		}
+		if json.Unmarshal(resp.Body, &v) == nil {
+			out.Accounts = v.Accounts
+		}
+	}
+	if resp, err := a.groupsResponse(); err == nil {
+		var v struct {
+			Groups []string `json:"groups"`
+		}
+		if json.Unmarshal(resp.Body, &v) == nil && len(v.Groups) > 0 {
+			out.Groups = v.Groups
+		}
+	}
+	if resp, err := a.dashboard(managementRequest{Method: http.MethodGet, Query: url.Values{"days": []string{"7"}}}); err == nil {
+		_ = json.Unmarshal(resp.Body, &out.Dashboard)
+	}
+	payload, _ := json.Marshal(out)
+	// Keep the snapshot inside a script context without allowing account names
+	// or other redacted fields to terminate the script element.
+	safe := strings.NewReplacer("<", "\\u003c", ">", "\\u003e", "&", "\\u0026", "\u2028", "\\u2028", "\u2029", "\\u2029").Replace(string(payload))
+	body := bytes.Replace(embeddedIndex, []byte("window.__CPA_VIEW_SNAPSHOT__=null;"), []byte("window.__CPA_VIEW_SNAPSHOT__="+safe+";"), 1)
+	return htmlResponse(http.StatusOK, body)
 }
 
 func (a *pluginApp) accounts(ctx context.Context, _ managementRequest) (managementResponse, error) {
