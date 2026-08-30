@@ -4,6 +4,9 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -20,6 +23,28 @@ func TestConvertSub2APIAccount(t *testing.T) {
 	b, _ := json.Marshal(preview)
 	if bytes.Contains(b, []byte("secret")) {
 		t.Fatal("preview leaked credential")
+	}
+}
+
+func TestStandaloneRouteWhitelist(t *testing.T) {
+	a := newApp()
+
+	root := httptest.NewRecorder()
+	a.handleStandaloneHTTP(root, httptest.NewRequest(http.MethodGet, "/", nil))
+	if root.Code != http.StatusOK || !strings.Contains(root.Body.String(), "window.__CPA_VIEW_STANDALONE__=true") {
+		t.Fatalf("standalone page was not rendered: status=%d", root.Code)
+	}
+
+	blocked := httptest.NewRecorder()
+	a.handleStandaloneHTTP(blocked, httptest.NewRequest(http.MethodPut, "/api/prices", strings.NewReader(`{}`)))
+	if blocked.Code != http.StatusNotFound {
+		t.Fatalf("write route must not be public: status=%d", blocked.Code)
+	}
+
+	preview := httptest.NewRecorder()
+	a.handleStandaloneHTTP(preview, httptest.NewRequest(http.MethodPost, "/api/imports/preview", strings.NewReader(`{"content":""}`)))
+	if preview.Code != http.StatusOK {
+		t.Fatalf("preview route should be public: status=%d", preview.Code)
 	}
 }
 

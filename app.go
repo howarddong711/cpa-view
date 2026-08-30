@@ -31,12 +31,15 @@ const (
 )
 
 type pluginApp struct {
-	mu       sync.Mutex
-	dataDir  string
-	previews map[string]pendingPreview
-	groups   map[string]map[string]bool
-	hourly   []usageHourly
-	prices   map[string]modelPrice
+	mu         sync.Mutex
+	dataDir    string
+	previews   map[string]pendingPreview
+	groups     map[string]map[string]bool
+	hourly     []usageHourly
+	prices     map[string]modelPrice
+	serverMu   sync.Mutex
+	server     *http.Server
+	serverAddr string
 }
 type pendingPreview struct {
 	expiresAt time.Time
@@ -47,10 +50,10 @@ type pendingPreview struct {
 func newApp() *pluginApp {
 	return &pluginApp{dataDir: "data/cpa-view", previews: map[string]pendingPreview{}, groups: map[string]map[string]bool{"Codex": {}}, prices: map[string]modelPrice{}}
 }
-func closeApp() {}
+func closeApp() { app.closeStandalone() }
 func (a *pluginApp) configure(raw []byte) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
+	standaloneAddr := a.serverAddr
 	for _, line := range strings.Split(string(raw), "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "data_dir:") {
@@ -58,14 +61,105 @@ func (a *pluginApp) configure(raw []byte) {
 				a.dataDir = strings.Trim(v, "\"'")
 			}
 		}
+		if strings.HasPrefix(line, "standalone_addr:") {
+			standaloneAddr = strings.Trim(strings.TrimSpace(strings.TrimPrefix(line, "standalone_addr:")), "\"'")
+		}
 	}
 	_ = os.MkdirAll(a.dataDir, 0o700)
 	a.loadHourly()
 	a.loadGroups()
 	a.loadPrices()
+	a.mu.Unlock()
+	if standaloneAddr != "" {
+		a.startStandalone(standaloneAddr)
+	}
 }
 func (a *pluginApp) registration() pluginRegistration {
-	return pluginRegistration{SchemaVersion: schemaVersion, Metadata: metadata{Name: "CPA View", Version: "0.1.0", Author: "howarddong711", GitHubRepository: "https://github.com/howarddong711/cpa-view", Logo: "https://raw.githubusercontent.com/howarddong711/cpa-view/main/assets/logo.svg", ConfigFields: []configField{{Name: "data_dir", Type: "string", Description: "Directory for aggregate usage and group data only."}}}, Capabilities: capabilities{ManagementAPI: true, UsagePlugin: true}}
+	return pluginRegistration{SchemaVersion: schemaVersion, Metadata: metadata{Name: "CPA View", Version: "0.2.0", Author: "howarddong711", GitHubRepository: "https://github.com/howarddong711/cpa-view", Logo: "https://raw.githubusercontent.com/howarddong711/cpa-view/main/assets/logo.svg", ConfigFields: []configField{{Name: "data_dir", Type: "string", Description: "Directory for aggregate usage and group data only."}, {Name: "standalone_addr", Type: "string", Description: "Optional internal listen address for the standalone read and import page."}}}, Capabilities: capabilities{ManagementAPI: true, UsagePlugin: true}}
+}
+
+func (a *pluginApp) startStandalone(addr string) {
+	a.serverMu.Lock()
+	defer a.serverMu.Unlock()
+	if a.server != nil {
+		return
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", a.handleStandaloneHTTP)
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    32 << 10,
+	}
+	a.server = server
+	a.serverAddr = addr
+	go func() { _ = server.ListenAndServe() }()
+}
+
+func (a *pluginApp) closeStandalone() {
+	a.serverMu.Lock()
+	server := a.server
+	a.server = nil
+	a.serverMu.Unlock()
+	if server != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = server.Shutdown(ctx)
+	}
+}
+
+func (a *pluginApp) handleStandaloneHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+
+	var resp managementResponse
+	var err error
+	switch {
+	case r.Method == http.MethodGet && r.URL.Path == "/":
+		resp = a.renderStandaloneIndex(r.Context())
+	case r.Method == http.MethodGet && r.URL.Path == "/api/accounts":
+		resp, err = a.accounts(r.Context(), managementRequest{})
+	case r.Method == http.MethodGet && r.URL.Path == "/api/groups":
+		resp, err = a.groupsResponse()
+	case r.Method == http.MethodGet && r.URL.Path == "/api/dashboard":
+		resp, err = a.dashboard(managementRequest{Method: http.MethodGet, Query: r.URL.Query()})
+	case r.Method == http.MethodPost && (r.URL.Path == "/api/imports/preview" || r.URL.Path == "/api/imports/commit"):
+		r.Body = http.MaxBytesReader(w, r.Body, maxInputBytes+(4<<20))
+		body, readErr := io.ReadAll(r.Body)
+		if readErr != nil {
+			resp, err = jsonResponse(http.StatusRequestEntityTooLarge, map[string]any{"error": "input_too_large"})
+			break
+		}
+		req := managementRequest{Method: r.Method, Path: r.URL.Path, Headers: r.Header.Clone(), Query: r.URL.Query(), Body: body}
+		if r.URL.Path == "/api/imports/preview" {
+			resp, err = a.preview(req)
+		} else {
+			resp, err = a.commit(r.Context(), req)
+		}
+	default:
+		resp, err = jsonResponse(http.StatusNotFound, map[string]any{"error": "not_found"})
+	}
+	if err != nil {
+		resp, _ = jsonResponse(http.StatusInternalServerError, map[string]any{"error": "request_failed"})
+	}
+	for key, values := range resp.Headers {
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
+	}
+	status := resp.StatusCode
+	if status == 0 {
+		status = http.StatusOK
+	}
+	w.WriteHeader(status)
+	_, _ = w.Write(resp.Body)
 }
 func (a *pluginApp) managementRegistration() managementRegistration {
 	return managementRegistration{
@@ -159,6 +253,12 @@ func (a *pluginApp) renderIndex(ctx context.Context) managementResponse {
 	safe := strings.NewReplacer("<", "\\u003c", ">", "\\u003e", "&", "\\u0026", "\u2028", "\\u2028", "\u2029", "\\u2029").Replace(string(payload))
 	body := bytes.Replace(embeddedIndex, []byte("window.__CPA_VIEW_SNAPSHOT__=null;"), []byte("window.__CPA_VIEW_SNAPSHOT__="+safe+";"), 1)
 	return htmlResponse(http.StatusOK, body)
+}
+
+func (a *pluginApp) renderStandaloneIndex(ctx context.Context) managementResponse {
+	resp := a.renderIndex(ctx)
+	resp.Body = bytes.Replace(resp.Body, []byte("window.__CPA_VIEW_STANDALONE__=false;"), []byte("window.__CPA_VIEW_STANDALONE__=true;"), 1)
+	return resp
 }
 
 func (a *pluginApp) accounts(ctx context.Context, _ managementRequest) (managementResponse, error) {

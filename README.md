@@ -35,6 +35,13 @@ plugins:
       enabled: true
       priority: 20
       data_dir: data/cpa-view
+      standalone_addr: ":8328"
 ```
 
 Only aggregate usage and group membership are stored under `data_dir`. Raw auth JSON and tokens are held in memory only while a preview is pending.
+
+When `standalone_addr` is set, CPA View also serves a narrowly scoped standalone
+HTTP surface: redacted accounts, groups and dashboard reads, plus bounded import
+preview and commit. It does not expose group, price, status, delete, or other CPA
+management writes. Bind the container port to host loopback and publish it only
+through a rate-limited HTTPS reverse proxy.

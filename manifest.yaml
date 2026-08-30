@@ -3,8 +3,8 @@ id: cpa-view
 name: CPA View
 description: Simplified CLIProxyAPI account pool and usage dashboard.
 author: howarddong711
-version: 0.1.0
-release-tag: v0.1.0
+version: 0.2.0
+release-tag: v0.2.0
 repository: https://github.com/howarddong711/cpa-view
 homepage: https://github.com/howarddong711/cpa-view
 license: MIT
@@ -15,4 +15,3 @@ tags:
   - dashboard
 install:
   type: github-release
-
