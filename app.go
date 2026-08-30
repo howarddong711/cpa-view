@@ -36,6 +36,7 @@ type pluginApp struct {
 	previews map[string]pendingPreview
 	groups   map[string]map[string]bool
 	hourly   []usageHourly
+	prices   map[string]modelPrice
 }
 type pendingPreview struct {
 	expiresAt time.Time
@@ -44,7 +45,7 @@ type pendingPreview struct {
 }
 
 func newApp() *pluginApp {
-	return &pluginApp{dataDir: "data/cpa-view", previews: map[string]pendingPreview{}, groups: map[string]map[string]bool{"Codex": {}}}
+	return &pluginApp{dataDir: "data/cpa-view", previews: map[string]pendingPreview{}, groups: map[string]map[string]bool{"Codex": {}}, prices: map[string]modelPrice{}}
 }
 func closeApp() {}
 func (a *pluginApp) configure(raw []byte) {
@@ -61,6 +62,7 @@ func (a *pluginApp) configure(raw []byte) {
 	_ = os.MkdirAll(a.dataDir, 0o700)
 	a.loadHourly()
 	a.loadGroups()
+	a.loadPrices()
 }
 func (a *pluginApp) registration() pluginRegistration {
 	return pluginRegistration{SchemaVersion: schemaVersion, Metadata: metadata{Name: "CPA View", Version: "0.1.0", Author: "howarddong711", GitHubRepository: "https://github.com/howarddong711/cpa-view", Logo: "https://raw.githubusercontent.com/howarddong711/cpa-view/main/assets/logo.svg", ConfigFields: []configField{{Name: "data_dir", Type: "string", Description: "Directory for aggregate usage and group data only."}}}, Capabilities: capabilities{ManagementAPI: true, UsagePlugin: true}}
@@ -77,6 +79,9 @@ func (a *pluginApp) managementRegistration() managementRegistration {
 			{Method: "PATCH", Path: "/cpa-view/groups", Description: "Rename account group"},
 			{Method: "DELETE", Path: "/cpa-view/groups", Description: "Delete account group"},
 			{Method: "GET", Path: "/cpa-view/dashboard", Description: "Usage dashboard data"},
+			{Method: "GET", Path: "/cpa-view/prices", Description: "List model prices"},
+			{Method: "PUT", Path: "/cpa-view/prices", Description: "Save model price"},
+			{Method: "POST", Path: "/cpa-view/prices/sync", Description: "Sync official model prices"},
 		},
 	}
 }
@@ -107,6 +112,12 @@ func (a *pluginApp) handleManagement(ctx context.Context, req managementRequest)
 		return a.deleteGroup(req)
 	case req.Method == http.MethodGet && path == "/dashboard":
 		return a.dashboard(req)
+	case req.Method == http.MethodGet && path == "/prices":
+		return a.pricesResponse()
+	case req.Method == http.MethodPut && path == "/prices":
+		return a.savePrice(req)
+	case req.Method == http.MethodPost && path == "/prices/sync":
+		return a.syncPrices()
 	default:
 		return jsonResponse(http.StatusNotFound, map[string]any{"error": "not_found"})
 	}
@@ -163,6 +174,7 @@ func (a *pluginApp) accounts(ctx context.Context, _ managementRequest) (manageme
 	defer a.mu.Unlock()
 	rows := make([]accountRow, 0, len(list.Files))
 	usageByAuth := map[string]usageHourly{}
+	costByAuth := map[string]float64{}
 	for _, usage := range a.hourly {
 		total := usageByAuth[usage.AuthIndex]
 		total.RequestCount += usage.RequestCount
@@ -171,6 +183,7 @@ func (a *pluginApp) accounts(ctx context.Context, _ managementRequest) (manageme
 		total.OutputTokens += usage.OutputTokens
 		total.CachedTokens += usage.CachedTokens
 		usageByAuth[usage.AuthIndex] = total
+		costByAuth[usage.AuthIndex] += a.costForUsage(usage)
 	}
 	for _, f := range list.Files {
 		groups := []string{"全部"}
@@ -183,7 +196,7 @@ func (a *pluginApp) accounts(ctx context.Context, _ managementRequest) (manageme
 			}
 		}
 		u := usageByAuth[f.AuthIndex]
-		row := accountRow{AuthIndex: f.AuthIndex, Name: redactName(f.Name, f.Email), Email: redactEmail(f.Email), Type: f.Type, Status: f.Status, Disabled: f.Disabled, RequestCount: f.Success + f.Failed + u.RequestCount, TotalTokens: u.InputTokens + u.OutputTokens, InputTokens: u.InputTokens, OutputTokens: u.OutputTokens, CachedTokens: u.CachedTokens, Groups: uniqueStrings(groups)}
+		row := accountRow{AuthIndex: f.AuthIndex, Name: redactName(f.Name, f.Email), Email: redactEmail(f.Email), Type: f.Type, Status: f.Status, Disabled: f.Disabled, RequestCount: f.Success + f.Failed + u.RequestCount, TotalTokens: u.InputTokens + u.OutputTokens, InputTokens: u.InputTokens, OutputTokens: u.OutputTokens, CachedTokens: u.CachedTokens, Groups: uniqueStrings(groups), EstimatedCost: costByAuth[f.AuthIndex]}
 		if u.RequestCount > 0 {
 			rate := float64(u.SuccessCount) / float64(u.RequestCount) * 100
 			row.SuccessRate = &rate
@@ -405,7 +418,7 @@ func (a *pluginApp) dashboard(req managementRequest) (managementResponse, error)
 	if total > 0 {
 		rate = float64(success) * 100 / float64(total)
 	}
-	return jsonResponse(http.StatusOK, map[string]any{"range_days": days, "requests": total, "success_rate": rate, "total_tokens": inTok + outTok, "input_tokens": inTok, "output_tokens": outTok, "cached_tokens": cached, "cache_hit_rate": cacheRate(cached, inTok), "rpm": float64(total) / float64(days*24*60), "tpm": float64(inTok+outTok) / float64(days*24*60), "estimated_cost": estimateCost(inTok, outTok), "token_trend": trend, "model_ranking": byModel, "account_ranking": byAccount})
+	return jsonResponse(http.StatusOK, map[string]any{"range_days": days, "requests": total, "success_rate": rate, "total_tokens": inTok + outTok, "input_tokens": inTok, "output_tokens": outTok, "cached_tokens": cached, "cache_hit_rate": cacheRate(cached, inTok), "rpm": float64(total) / float64(days*24*60), "tpm": float64(inTok+outTok) / float64(days*24*60), "estimated_cost": a.costForSince(since), "token_trend": trend, "model_ranking": byModel, "account_ranking": byAccount})
 }
 
 func (a *pluginApp) handleUsage(r usageRecord) {
@@ -457,6 +470,111 @@ func (a *pluginApp) loadGroups() {
 			}
 		}
 	}
+}
+
+func (a *pluginApp) loadPrices() {
+	b, err := os.ReadFile(filepath.Join(a.dataDir, "model_prices.json"))
+	if err == nil {
+		var p map[string]modelPrice
+		if json.Unmarshal(b, &p) == nil {
+			a.prices = p
+		}
+	}
+}
+func (a *pluginApp) persistPrices() {
+	_ = os.MkdirAll(a.dataDir, 0o700)
+	b, _ := json.Marshal(a.prices)
+	_ = os.WriteFile(filepath.Join(a.dataDir, "model_prices.json"), b, 0o600)
+}
+func (a *pluginApp) pricesResponse() (managementResponse, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	rows := make([]modelPrice, 0, len(a.prices))
+	for _, p := range a.prices {
+		rows = append(rows, p)
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Model < rows[j].Model })
+	return jsonResponse(http.StatusOK, map[string]any{"prices": rows, "source": "models.dev", "updated_at": time.Now()})
+}
+func (a *pluginApp) savePrice(req managementRequest) (managementResponse, error) {
+	var p modelPrice
+	if json.Unmarshal(req.Body, &p) != nil || strings.TrimSpace(p.Model) == "" || p.Input < 0 || p.Output < 0 || p.Cached < 0 || p.CacheWrite < 0 {
+		return jsonResponse(http.StatusBadRequest, map[string]any{"error": "invalid_price"})
+	}
+	p.Model = strings.TrimSpace(p.Model)
+	p.Source = "custom"
+	p.UpdatedAt = time.Now()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.prices[p.Model] = p
+	a.persistPrices()
+	return jsonResponse(http.StatusOK, p)
+}
+func (a *pluginApp) syncPrices() (managementResponse, error) {
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Get("https://models.dev/api.json")
+	if err != nil {
+		return jsonResponse(http.StatusBadGateway, map[string]any{"error": "price_source_unavailable"})
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return jsonResponse(http.StatusBadGateway, map[string]any{"error": "price_source_unavailable"})
+	}
+	var providers map[string]struct {
+		Models map[string]struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+			Cost struct {
+				Input      float64 `json:"input"`
+				Output     float64 `json:"output"`
+				CacheRead  float64 `json:"cache_read"`
+				CacheWrite float64 `json:"cache_write"`
+			} `json:"cost"`
+		} `json:"models"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 20<<20)).Decode(&providers); err != nil {
+		return jsonResponse(http.StatusBadGateway, map[string]any{"error": "invalid_price_source"})
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	count := 0
+	for _, provider := range providers {
+		for key, m := range provider.Models {
+			if m.Cost.Input == 0 && m.Cost.Output == 0 {
+				continue
+			}
+			model := m.ID
+			if model == "" {
+				model = key
+			}
+			a.prices[model] = modelPrice{Model: model, Input: m.Cost.Input, Output: m.Cost.Output, Cached: m.Cost.CacheRead, CacheWrite: m.Cost.CacheWrite, Multiplier: 1, Source: "models.dev", UpdatedAt: time.Now()}
+			count++
+		}
+	}
+	a.persistPrices()
+	return jsonResponse(http.StatusOK, map[string]any{"synced": count, "source": "models.dev"})
+}
+
+func (a *pluginApp) costForUsage(u usageHourly) float64 {
+	p, ok := a.prices[u.Model]
+	if !ok {
+		return 0
+	}
+	m := p.Multiplier
+	if m == 0 {
+		m = 1
+	}
+	return m * (float64(u.InputTokens)*p.Input + float64(u.OutputTokens)*p.Output + float64(u.CachedTokens)*p.Cached) / 1_000_000
+}
+func (a *pluginApp) costForSince(since time.Time) float64 {
+	var total float64
+	for _, u := range a.hourly {
+		t, e := time.Parse(time.RFC3339, u.Hour)
+		if e == nil && !t.Before(since) {
+			total += a.costForUsage(u)
+		}
+	}
+	return total
 }
 
 func (a *pluginApp) persistGroups() {

@@ -126,20 +126,21 @@ type usageDetail struct {
 }
 
 type accountRow struct {
-	AuthIndex    string     `json:"auth_index"`
-	Name         string     `json:"name"`
-	Email        string     `json:"email,omitempty"`
-	Type         string     `json:"type,omitempty"`
-	Status       string     `json:"status,omitempty"`
-	Disabled     bool       `json:"disabled"`
-	RequestCount int64      `json:"request_count"`
-	SuccessRate  *float64   `json:"success_rate,omitempty"`
-	TotalTokens  int64      `json:"total_tokens"`
-	InputTokens  int64      `json:"input_tokens"`
-	OutputTokens int64      `json:"output_tokens"`
-	CachedTokens int64      `json:"cached_tokens"`
-	LastActivity *time.Time `json:"last_activity,omitempty"`
-	Groups       []string   `json:"groups"`
+	AuthIndex     string     `json:"auth_index"`
+	Name          string     `json:"name"`
+	Email         string     `json:"email,omitempty"`
+	Type          string     `json:"type,omitempty"`
+	Status        string     `json:"status,omitempty"`
+	Disabled      bool       `json:"disabled"`
+	RequestCount  int64      `json:"request_count"`
+	SuccessRate   *float64   `json:"success_rate,omitempty"`
+	TotalTokens   int64      `json:"total_tokens"`
+	InputTokens   int64      `json:"input_tokens"`
+	OutputTokens  int64      `json:"output_tokens"`
+	CachedTokens  int64      `json:"cached_tokens"`
+	LastActivity  *time.Time `json:"last_activity,omitempty"`
+	Groups        []string   `json:"groups"`
+	EstimatedCost float64    `json:"estimated_cost"`
 }
 type usageHourly struct {
 	Hour          string  `json:"hour"`
@@ -152,6 +153,17 @@ type usageHourly struct {
 	CachedTokens  int64   `json:"cached_tokens"`
 	LatencyMS     int64   `json:"latency_ms"`
 	EstimatedCost float64 `json:"estimated_cost"`
+}
+
+type modelPrice struct {
+	Model      string    `json:"model"`
+	Input      float64   `json:"input"`
+	Output     float64   `json:"output"`
+	Cached     float64   `json:"cached"`
+	CacheWrite float64   `json:"cache_write"`
+	Multiplier float64   `json:"multiplier"`
+	Source     string    `json:"source"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 type cpaAuth struct {
