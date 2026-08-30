@@ -196,7 +196,7 @@ func (a *pluginApp) accounts(ctx context.Context, _ managementRequest) (manageme
 			}
 		}
 		u := usageByAuth[f.AuthIndex]
-		row := accountRow{AuthIndex: f.AuthIndex, Name: redactName(f.Name, f.Email), Email: redactEmail(f.Email), Type: f.Type, Status: f.Status, Disabled: f.Disabled, RequestCount: f.Success + f.Failed + u.RequestCount, TotalTokens: u.InputTokens + u.OutputTokens, InputTokens: u.InputTokens, OutputTokens: u.OutputTokens, CachedTokens: u.CachedTokens, Groups: uniqueStrings(groups), EstimatedCost: costByAuth[f.AuthIndex]}
+		row := accountRow{AuthIndex: f.AuthIndex, Name: redactName(f.Name, f.Email), Email: redactEmail(f.Email), Type: f.Type, Status: f.Status, Disabled: f.Disabled, RequestCount: f.Success + f.Failed + u.RequestCount, SuccessCount: f.Success + u.SuccessCount, FailedCount: f.Failed + (u.RequestCount - u.SuccessCount), TotalTokens: u.InputTokens + u.OutputTokens, InputTokens: u.InputTokens, OutputTokens: u.OutputTokens, CachedTokens: u.CachedTokens, Groups: uniqueStrings(groups), EstimatedCost: costByAuth[f.AuthIndex], Quota: f.Quota}
 		if u.RequestCount > 0 {
 			rate := float64(u.SuccessCount) / float64(u.RequestCount) * 100
 			row.SuccessRate = &rate

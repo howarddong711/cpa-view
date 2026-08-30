@@ -90,19 +90,20 @@ type authListResponse struct {
 	Files []authEntry `json:"files"`
 }
 type authEntry struct {
-	ID          string    `json:"id,omitempty"`
-	AuthIndex   string    `json:"auth_index,omitempty"`
-	Name        string    `json:"name"`
-	Type        string    `json:"type,omitempty"`
-	Provider    string    `json:"provider,omitempty"`
-	Label       string    `json:"label,omitempty"`
-	Status      string    `json:"status,omitempty"`
-	Disabled    bool      `json:"disabled,omitempty"`
-	Email       string    `json:"email,omitempty"`
-	Success     int64     `json:"success,omitempty"`
-	Failed      int64     `json:"failed,omitempty"`
-	UpdatedAt   time.Time `json:"updated_at,omitempty"`
-	LastRefresh time.Time `json:"last_refresh,omitempty"`
+	ID          string         `json:"id,omitempty"`
+	AuthIndex   string         `json:"auth_index,omitempty"`
+	Name        string         `json:"name"`
+	Type        string         `json:"type,omitempty"`
+	Provider    string         `json:"provider,omitempty"`
+	Label       string         `json:"label,omitempty"`
+	Status      string         `json:"status,omitempty"`
+	Disabled    bool           `json:"disabled,omitempty"`
+	Email       string         `json:"email,omitempty"`
+	Success     int64          `json:"success,omitempty"`
+	Failed      int64          `json:"failed,omitempty"`
+	UpdatedAt   time.Time      `json:"updated_at,omitempty"`
+	LastRefresh time.Time      `json:"last_refresh,omitempty"`
+	Quota       map[string]any `json:"quota,omitempty"`
 }
 type authSaveRequest struct {
 	Name string          `json:"name"`
@@ -126,21 +127,24 @@ type usageDetail struct {
 }
 
 type accountRow struct {
-	AuthIndex     string     `json:"auth_index"`
-	Name          string     `json:"name"`
-	Email         string     `json:"email,omitempty"`
-	Type          string     `json:"type,omitempty"`
-	Status        string     `json:"status,omitempty"`
-	Disabled      bool       `json:"disabled"`
-	RequestCount  int64      `json:"request_count"`
-	SuccessRate   *float64   `json:"success_rate,omitempty"`
-	TotalTokens   int64      `json:"total_tokens"`
-	InputTokens   int64      `json:"input_tokens"`
-	OutputTokens  int64      `json:"output_tokens"`
-	CachedTokens  int64      `json:"cached_tokens"`
-	LastActivity  *time.Time `json:"last_activity,omitempty"`
-	Groups        []string   `json:"groups"`
-	EstimatedCost float64    `json:"estimated_cost"`
+	AuthIndex     string         `json:"auth_index"`
+	Name          string         `json:"name"`
+	Email         string         `json:"email,omitempty"`
+	Type          string         `json:"type,omitempty"`
+	Status        string         `json:"status,omitempty"`
+	Disabled      bool           `json:"disabled"`
+	RequestCount  int64          `json:"request_count"`
+	SuccessCount  int64          `json:"success_count"`
+	FailedCount   int64          `json:"failed_count"`
+	SuccessRate   *float64       `json:"success_rate,omitempty"`
+	TotalTokens   int64          `json:"total_tokens"`
+	InputTokens   int64          `json:"input_tokens"`
+	OutputTokens  int64          `json:"output_tokens"`
+	CachedTokens  int64          `json:"cached_tokens"`
+	LastActivity  *time.Time     `json:"last_activity,omitempty"`
+	Groups        []string       `json:"groups"`
+	EstimatedCost float64        `json:"estimated_cost"`
+	Quota         map[string]any `json:"quota,omitempty"`
 }
 type usageHourly struct {
 	Hour          string  `json:"hour"`
