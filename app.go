@@ -122,7 +122,7 @@ func (a *pluginApp) handleStandaloneHTTP(w http.ResponseWriter, r *http.Request)
 	var resp managementResponse
 	var err error
 	switch {
-	case r.Method == http.MethodGet && r.URL.Path == "/":
+	case (r.Method == http.MethodGet || r.Method == http.MethodHead) && r.URL.Path == "/":
 		resp = a.renderStandaloneIndex(r.Context())
 	case r.Method == http.MethodGet && r.URL.Path == "/api/accounts":
 		resp, err = a.accounts(r.Context(), managementRequest{})
@@ -159,6 +159,9 @@ func (a *pluginApp) handleStandaloneHTTP(w http.ResponseWriter, r *http.Request)
 		status = http.StatusOK
 	}
 	w.WriteHeader(status)
+	if r.Method == http.MethodHead {
+		return
+	}
 	_, _ = w.Write(resp.Body)
 }
 func (a *pluginApp) managementRegistration() managementRegistration {

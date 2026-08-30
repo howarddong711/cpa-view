@@ -35,6 +35,12 @@ func TestStandaloneRouteWhitelist(t *testing.T) {
 		t.Fatalf("standalone page was not rendered: status=%d", root.Code)
 	}
 
+	head := httptest.NewRecorder()
+	a.handleStandaloneHTTP(head, httptest.NewRequest(http.MethodHead, "/", nil))
+	if head.Code != http.StatusOK || head.Body.Len() != 0 {
+		t.Fatalf("standalone HEAD should return status only: status=%d body=%d", head.Code, head.Body.Len())
+	}
+
 	blocked := httptest.NewRecorder()
 	a.handleStandaloneHTTP(blocked, httptest.NewRequest(http.MethodPut, "/api/prices", strings.NewReader(`{}`)))
 	if blocked.Code != http.StatusNotFound {
